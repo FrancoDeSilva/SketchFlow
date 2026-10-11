@@ -1,89 +1,96 @@
-import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomUUID } from "crypto";
 import { Server } from "socket.io";
 
-interface Point { x: number; y: number; }
-interface Stroke { id: string; points: Point[]; color: string; width: number; }
-interface Room { id: string; name: string; strokes: Stroke[]; users: Set<string>; }
-
-const PORT = Number(process.env.PORT ?? 3000);
-const rooms = new Map<string, Room>();
-
-const httpServer = createServer();
-const io = new Server(httpServer, { cors: { origin: true, credentials: false } });
-
-function cleanName(name: string) {
-  return name.trim().replace(/\s+/g, " ").slice(0, 60);
+interface Room {
+    roomName: string;
+    users: string[];
+    room_id: string;
 }
 
-function roomList() {
-  return [...rooms.values()].map(({ id, name, users }) => ({ id, name, users: users.size }));
-}
+const rooms: Room[] = [];
 
-io.on("connection", (socket) => {
-  socket.on("get rooms", (callback?: (rooms: ReturnType<typeof roomList>) => void) => {
-    callback?.(roomList());
-  });
-
-  socket.on("create room", (name: string, callback?: (result: object) => void) => {
-    const roomName = cleanName(name ?? "");
-    if (!roomName) return callback?.({ ok: false, error: "Please enter a room name." });
-
-    const room: Room = { id: randomUUID(), name: roomName, strokes: [], users: new Set() };
-    rooms.set(room.id, room);
-    callback?.({ ok: true, room: { id: room.id, name: room.name } });
-    io.emit("rooms updated", roomList());
-  });
-
-  socket.on("join room", (roomId: string, callback?: (result: object) => void) => {
-    const room = rooms.get(roomId);
-    if (!room) return callback?.({ ok: false, error: "Room not found." });
-
-    const previousRoom = socket.data.roomId as string | undefined;
-    if (previousRoom && previousRoom !== roomId) leaveRoom(socket.id, previousRoom);
-
-    room.users.add(socket.id);
-    socket.data.roomId = roomId;
-    socket.join(roomId);
-    callback?.({ ok: true, room: { id: room.id, name: room.name }, strokes: room.strokes });
-    io.to(roomId).emit("room users", room.users.size);
-    io.emit("rooms updated", roomList());
-  });
-
-  socket.on("draw stroke", (stroke: Stroke) => {
-    const roomId = socket.data.roomId as string | undefined;
-    const room = roomId ? rooms.get(roomId) : undefined;
-    if (!room || !validStroke(stroke)) return;
-
-    const saved = { ...stroke, id: stroke.id || randomUUID() };
-    room.strokes.push(saved);
-    socket.to(roomId!).emit("draw stroke", saved);
-  });
-
-  socket.on("clear board", () => {
-    const roomId = socket.data.roomId as string | undefined;
-    const room = roomId ? rooms.get(roomId) : undefined;
-    if (!room) return;
-    room.strokes = [];
-    io.to(roomId!).emit("clear board");
-  });
-
-  socket.on("disconnect", () => {
-    const roomId = socket.data.roomId as string | undefined;
-    if (roomId) leaveRoom(socket.id, roomId);
-    io.emit("rooms updated", roomList());
-  });
+const io = new Server({
+    cors: {
+        origin: "*",
+    },
 });
 
-function validStroke(stroke: Stroke) {
-  return !!stroke && Array.isArray(stroke.points) && stroke.points.length > 0 && stroke.points.length < 10000;
-}
+io.on("connection", (socket) => {
 
-function leaveRoom(socketId: string, roomId: string) {
-  const room = rooms.get(roomId);
-  if (!room) return;
-  room.users.delete(socketId);
-  io.to(roomId).emit("room users", room.users.size);
-}
+    console.log("User connected:", socket.id);
 
-httpServer.listen(PORT, () => console.log(`DrawTogether server running at http://localhost:${PORT}`));
+    // Create a room
+    socket.on("create room", (roomName: string) => {
+
+        const room: Room = {
+            roomName: roomName,
+            users: [socket.id],
+            room_id: randomUUID(),
+        };
+
+        rooms.push(room);
+
+        socket.join(room.room_id);
+
+        console.log("Room created:", room);
+    });
+
+
+    // Get all rooms
+    socket.on("get room", (callback) => {
+
+        callback(
+            rooms.map((room) => ({
+                name: room.roomName,
+                id: room.room_id,
+            }))
+        );
+
+    });
+
+
+    // Join a room
+    socket.on("join room", (room_id: string) => {
+
+        const room = rooms.find(
+            (room) => room.room_id === room_id
+        );
+
+        if (room) {
+
+            room.users.push(socket.id);
+
+            socket.join(room_id);
+
+            console.log(
+                `${socket.id} joined room ${room.roomName}`
+            );
+
+        } else {
+
+            console.log("Room not found");
+
+        }
+    });
+
+
+    // Disconnect
+    socket.on("disconnect", () => {
+
+        console.log("User disconnected:", socket.id);
+
+        // Remove user from rooms
+        rooms.forEach((room) => {
+            room.users = room.users.filter(
+                (userId) => userId !== socket.id
+            );
+        });
+
+    });
+
+});
+
+
+io.listen(3000);
+
+console.log("Server started on port 3000");

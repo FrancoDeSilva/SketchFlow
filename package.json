@@ -1,16 +1,9 @@
 {
-  "name": "drawtogether",
+  "name": "drawtogether-frontend",
   "private": true,
+  "version": "1.0.0",
   "type": "module",
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts"
-  },
-  "dependencies": {
-    "socket.io": "^4.8.3"
-  },
-  "devDependencies": {
-    "tsx": "^4.23.13",
-    "typescript": "^6.0.2"
-  }
+  "scripts": { "dev": "vite", "build": "tsc && vite build", "preview": "vite preview" },
+  "dependencies": { "socket.io-client": "^4.8.3" },
+  "devDependencies": { "typescript": "^6.0.2", "vite": "^8.3.0" }
 }
